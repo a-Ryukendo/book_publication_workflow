@@ -1,200 +1,52 @@
-"""
-Data models for the Automated Book Publication Workflow
-"""
-from datetime import datetime
-from typing import Optional, List, Dict, Any
-from enum import Enum
-from pydantic import BaseModel, Field
-from uuid import UUID, uuid4
+from dataclasses import dataclass, field
 
-
-class ContentStatus(str, Enum):
-    """Status of content processing"""
-    SCRAPED = "scraped"
-    WRITING = "writing"
-    REVIEWING = "reviewing"
-    EDITING = "editing"
-    APPROVED = "approved"
-    REJECTED = "rejected"
-    PUBLISHED = "published"
-
-
-class IterationStatus(str, Enum):
-    """Status of human-in-the-loop iterations"""
-    PENDING = "pending"
-    IN_PROGRESS = "in_progress"
-    APPROVED = "approved"
-    REJECTED = "rejected"
-    COMPLETED = "completed"
-
-
-class FeedbackType(str, Enum):
-    """Types of human feedback"""
-    WRITER = "writer"
-    REVIEWER = "reviewer"
-    EDITOR = "editor"
-    GENERAL = "general"
-
-
-class VoiceCommand(str, Enum):
-    """Voice command types"""
-    START_SCRAPING = "start_scraping"
-    PROCESS_CONTENT = "process_content"
-    START_ITERATION = "start_iteration"
-    APPROVE_CONTENT = "approve_content"
-    REJECT_CONTENT = "reject_content"
-    SEARCH_CONTENT = "search_content"
-
-
-class ScrapedContent(BaseModel):
-    """Model for scraped content"""
-    id: UUID = Field(default_factory=uuid4)
-    url: str
+@dataclass
+class Scraped:
+    id: str
     title: str
-    content: str
-    metadata: Dict[str, Any] = Field(default_factory=dict)
-    screenshot_path: Optional[str] = None
-    scraped_at: datetime = Field(default_factory=datetime.utcnow)
-    status: ContentStatus = ContentStatus.SCRAPED
+    body: str
+    info: dict = field(default_factory=dict)
+    screenshot: str = ""
+    created: str = ""
+    status: str = "scraped"
 
+@dataclass
+class Processed:
+    original_id: str
+    writer: str
+    reviewer: str
+    editor: str
+    score: float
+    meta: dict = field(default_factory=dict)
+    finished: str = ""
+    status: str = "editing"
 
-class ProcessedContent(BaseModel):
-    """Model for AI-processed content"""
-    id: UUID = Field(default_factory=uuid4)
-    original_content_id: UUID
-    writer_output: str
-    reviewer_output: str
-    editor_output: str
-    quality_score: float = Field(ge=0.0, le=1.0)
-    processing_metadata: Dict[str, Any] = Field(default_factory=dict)
-    processed_at: datetime = Field(default_factory=datetime.utcnow)
-    status: ContentStatus = ContentStatus.EDITING
+@dataclass
+class Iteration:
+    id: str
+    content_id: str
+    round: int
+    text: str
+    feedback: list = field(default_factory=list)
+    status: str = "pending"
+    started: str = ""
+    ended: str = ""
+    approved_by: str = ""
 
-
-class Iteration(BaseModel):
-    """Model for human-in-the-loop iterations"""
-    id: UUID = Field(default_factory=uuid4)
-    content_id: UUID
-    iteration_number: int
-    current_content: str
-    feedback_history: List[Dict[str, Any]] = Field(default_factory=list)
-    status: IterationStatus = IterationStatus.PENDING
-    started_at: datetime = Field(default_factory=datetime.utcnow)
-    completed_at: Optional[datetime] = None
-    approved_by: Optional[str] = None
-
-
-class HumanFeedback(BaseModel):
-    """Model for human feedback"""
-    id: UUID = Field(default_factory=uuid4)
-    iteration_id: UUID
-    feedback_type: FeedbackType
-    feedback_text: str
-    suggested_changes: Optional[str] = None
-    rating: Optional[float] = Field(None, ge=0.0, le=5.0)
-    submitted_by: str
-    submitted_at: datetime = Field(default_factory=datetime.utcnow)
-
-
-class VoiceInput(BaseModel):
-    """Model for voice input"""
-    id: UUID = Field(default_factory=uuid4)
-    command: VoiceCommand
-    audio_file_path: str
-    transcribed_text: str
-    confidence_score: float = Field(ge=0.0, le=1.0)
-    processed_at: datetime = Field(default_factory=datetime.utcnow)
-
-
-class SearchQuery(BaseModel):
-    """Model for semantic search queries"""
-    id: UUID = Field(default_factory=uuid4)
-    query_text: str
-    filters: Dict[str, Any] = Field(default_factory=dict)
-    results: List[Dict[str, Any]] = Field(default_factory=list)
-    search_at: datetime = Field(default_factory=datetime.utcnow)
-
-
-class RLState(BaseModel):
-    """Model for reinforcement learning state"""
-    id: UUID = Field(default_factory=uuid4)
-    state_vector: List[float]
-    action_taken: str
-    reward_received: float
-    next_state: Optional[List[float]] = None
-    episode_id: str
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
-
-
-class WorkflowSession(BaseModel):
-    """Model for workflow session tracking"""
-    id: UUID = Field(default_factory=uuid4)
-    session_name: str
-    description: Optional[str] = None
-    content_items: List[UUID] = Field(default_factory=list)
-    current_iteration: Optional[UUID] = None
-    status: ContentStatus = ContentStatus.SCRAPED
-    created_at: datetime = Field(default_factory=datetime.utcnow)
-    updated_at: datetime = Field(default_factory=datetime.utcnow)
-    metadata: Dict[str, Any] = Field(default_factory=dict)
-
-
-class VersionControl(BaseModel):
-    """Model for version control of content"""
-    id: UUID = Field(default_factory=uuid4)
-    content_id: UUID
-    version_number: int
-    content_snapshot: str
-    change_description: str
-    changed_by: str
-    changed_at: datetime = Field(default_factory=datetime.utcnow)
-    parent_version: Optional[UUID] = None
-
-
-class APIResponse(BaseModel):
-    """Standard API response model"""
-    success: bool
+@dataclass
+class Feedback:
+    id: str
+    iteration_id: str
+    type: str
     message: str
-    data: Optional[Dict[str, Any]] = None
-    error: Optional[str] = None
-    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    suggestion: str = ""
+    rating: float = None
+    user: str = ""
+    submitted: str = ""
 
-
-class ScrapingRequest(BaseModel):
-    """Model for scraping requests"""
-    url: str
-    include_screenshot: bool = True
-    custom_headers: Optional[Dict[str, str]] = None
-    wait_time: int = 5
-
-
-class ProcessingRequest(BaseModel):
-    """Model for content processing requests"""
-    content_id: UUID
-    processing_type: str  # "writer", "reviewer", "editor", "all"
-    custom_prompts: Optional[Dict[str, str]] = None
-
-
-class IterationRequest(BaseModel):
-    """Model for iteration requests"""
-    content_id: UUID
-    feedback_type: FeedbackType
-    feedback_text: str
-    suggested_changes: Optional[str] = None
-    rating: Optional[float] = None
-    user_id: str
-
-
-class SearchRequest(BaseModel):
-    """Model for search requests"""
-    query: str
-    filters: Optional[Dict[str, Any]] = None
-    limit: int = 10
-    include_metadata: bool = True
-
-
-class VoiceRequest(BaseModel):
-    """Model for voice processing requests"""
-    audio_file_path: str
-    command_type: Optional[VoiceCommand] = None
-    language: str = "en-US" 
+@dataclass
+class Voice:
+    id: str
+    command: str
+    audio_path: str
+    transcript: str
