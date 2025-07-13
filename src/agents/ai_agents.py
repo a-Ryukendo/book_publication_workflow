@@ -12,9 +12,9 @@ import openai
 import google.generativeai as genai
 from anthropic import Anthropic
 
-from ..models import ScrapedContent, ProcessedContent, FeedbackType
-from ..config.settings import settings, LLMProvider
-from ..rl.reward_system import ContentProcessingRewardSystem
+from models import ScrapedContent, ProcessedContent, FeedbackType
+from config.settings import settings, LLMProvider
+from rl.reward_system import ContentProcessingRewardSystem
 
 
 class BaseAIAgent:
@@ -42,8 +42,7 @@ class BaseAIAgent:
         if self.provider == LLMProvider.OPENAI:
             if not self.llm_config["api_key"]:
                 raise ValueError("OpenAI API key not configured")
-            openai.api_key = self.llm_config["api_key"]
-            self.client = openai.OpenAI()
+            self.client = openai.OpenAI(api_key=self.llm_config["api_key"])
             
         elif self.provider == LLMProvider.GEMINI:
             if not self.llm_config["api_key"]:
@@ -61,8 +60,11 @@ class BaseAIAgent:
         start_time = time.time()
         
         try:
+            logger.info(f"Calling LLM for {self.agent_type} with provider: {self.provider}")
+            
             if self.provider == LLMProvider.OPENAI:
-                model = model or self.llm_config["models"].get(self.agent_type, "gpt-4")
+                model = model or self.llm_config["models"].get(self.agent_type, "gpt-4o")
+                logger.info(f"Using OpenAI model: {model}")
                 response = await asyncio.to_thread(
                     self.client.chat.completions.create,
                     model=model,
@@ -71,8 +73,10 @@ class BaseAIAgent:
                     temperature=0.7
                 )
                 result = response.choices[0].message.content
+                logger.info(f"OpenAI response received, length: {len(result) if result else 0}")
                 
             elif self.provider == LLMProvider.GEMINI:
+                logger.info("Using Gemini model")
                 response = await asyncio.to_thread(
                     self.model.generate_content,
                     prompt,
@@ -82,9 +86,11 @@ class BaseAIAgent:
                     )
                 )
                 result = response.text
+                logger.info(f"Gemini response received, length: {len(result) if result else 0}")
                 
             elif self.provider == LLMProvider.ANTHROPIC:
                 model = model or self.llm_config["models"].get(self.agent_type, "claude-3-sonnet-20240229")
+                logger.info(f"Using Anthropic model: {model}")
                 response = await asyncio.to_thread(
                     self.client.messages.create,
                     model=model,
@@ -93,10 +99,12 @@ class BaseAIAgent:
                     messages=[{"role": "user", "content": prompt}]
                 )
                 result = response.content[0].text
+                logger.info(f"Anthropic response received, length: {len(result) if result else 0}")
             
             processing_time = time.time() - start_time
             self._update_stats(True, processing_time)
             
+            logger.info(f"LLM call completed for {self.agent_type}, returning result")
             return result
             
         except Exception as e:
@@ -143,7 +151,7 @@ class AIWriter(BaseAIAgent):
         """Transform scraped content using AI writing"""
         
         # Get RL-optimized writing strategy
-        state_vector = self._create_state_vector(scraped_content)
+        state_vector = self._create_state_vector(scraped_content, style=style)
         rl_style = self.reward_system.get_processing_action(state_vector)
         
         # Use RL style if no specific style provided
@@ -177,14 +185,25 @@ class AIWriter(BaseAIAgent):
         try:
             transformed_content = await self._call_llm(prompt)
             
+            # Check if LLM call returned None or empty content
+            if not transformed_content:
+                logger.error("AI Writer received empty response from LLM")
+                raise ValueError("LLM returned empty response")
+            
             # Calculate quality score and update RL
             quality_score = self._calculate_writing_quality(scraped_content.content, transformed_content)
-            reward = self.reward_system.calculate_processing_reward(
-                scraped_content.content, transformed_content, quality_score, 1
-            )
             
-            next_state = self._create_state_vector(scraped_content, transformed_content, quality_score)
-            self.reward_system.update_processing_state(state_vector, style, reward, next_state)
+            try:
+                reward = self.reward_system.calculate_processing_reward(
+                    scraped_content.content, transformed_content, quality_score, 1
+                )
+                
+                next_state = self._create_state_vector(scraped_content, transformed_content, quality_score, style)
+                self.reward_system.update_processing_state(state_vector, style, reward, next_state)
+            except Exception as rl_error:
+                logger.error(f"RL processing failed: {rl_error}")
+                # Continue without RL update
+                reward = 0.0
             
             logger.info(f"AI Writer completed transformation with quality score: {quality_score:.3f}")
             return transformed_content
@@ -194,28 +213,71 @@ class AIWriter(BaseAIAgent):
             raise
     
     def _create_state_vector(self, scraped_content: ScrapedContent, 
-                           transformed_content: str = None, quality_score: float = 0.0) -> List[float]:
+                           transformed_content: str = None, quality_score: float = 0.0, style: str = "moderate") -> List[float]:
         """Create state vector for RL"""
-        original_length = len(scraped_content.content)
-        transformed_length = len(transformed_content) if transformed_content else original_length
-        
-        return [
-            original_length / 1000,  # Original content length (normalized)
-            transformed_length / 1000,  # Transformed content length (normalized)
-            quality_score,  # Quality score
-            len(scraped_content.title) / 100,  # Title length (normalized)
-            len(scraped_content.content.split()) / 100,  # Word count (normalized)
-            float(bool(scraped_content.title)),  # Has title
-            float(original_length > 100),  # Has substantial content
-            float(quality_score > 0.5),  # Good quality
-            float(len(scraped_content.metadata) > 0),  # Has metadata
-            abs(transformed_length - original_length) / original_length,  # Length change ratio
-            float(transformed_content and len(transformed_content) > 0),  # Has transformed content
-            time.time() % 1000,  # Time component
-            float(style in ["conservative", "moderate"]),  # Conservative style
-            float(style in ["aggressive", "creative"]),  # Creative style
-            float(style in ["formal", "casual"])  # Style type
-        ]
+        try:
+            logger.info(f"Creating state vector for {self.agent_type}")
+            logger.info(f"Scraped content: title='{scraped_content.title}', content_length={len(scraped_content.content) if scraped_content.content else 0}")
+            
+            original_length = len(scraped_content.content) if scraped_content.content else 0
+            transformed_length = len(transformed_content) if transformed_content else original_length
+            
+            # Create state vector step by step with logging
+            logger.info("Creating state vector elements...")
+            
+            elem1 = original_length / 1000
+            logger.info(f"Element 1 (original_length/1000): {elem1}")
+            
+            elem2 = transformed_length / 1000
+            logger.info(f"Element 2 (transformed_length/1000): {elem2}")
+            
+            elem3 = quality_score
+            logger.info(f"Element 3 (quality_score): {elem3}")
+            
+            elem4 = len(scraped_content.title) / 100 if scraped_content.title else 0
+            logger.info(f"Element 4 (title_length/100): {elem4}")
+            
+            elem5 = len(scraped_content.content.split()) / 100 if scraped_content.content else 0
+            logger.info(f"Element 5 (word_count/100): {elem5}")
+            
+            elem6 = float(bool(scraped_content.title) if scraped_content.title else False)
+            logger.info(f"Element 6 (has_title): {elem6}")
+            
+            elem7 = float(original_length > 100)
+            logger.info(f"Element 7 (has_substantial_content): {elem7}")
+            
+            elem8 = float(quality_score > 0.5)
+            logger.info(f"Element 8 (good_quality): {elem8}")
+            
+            elem9 = float(len(scraped_content.metadata) > 0)
+            logger.info(f"Element 9 (has_metadata): {elem9}")
+            
+            elem10 = abs(transformed_length - original_length) / max(original_length, 1)
+            logger.info(f"Element 10 (length_change_ratio): {elem10}")
+            
+            elem11 = float(transformed_content is not None and len(transformed_content) > 0 if transformed_content else False)
+            logger.info(f"Element 11 (has_transformed_content): {elem11}")
+            
+            elem12 = time.time() % 1000
+            logger.info(f"Element 12 (time_component): {elem12}")
+            
+            elem13 = float(style in ["conservative", "moderate"])
+            logger.info(f"Element 13 (conservative_style): {elem13}")
+            
+            elem14 = float(style in ["aggressive", "creative"])
+            logger.info(f"Element 14 (creative_style): {elem14}")
+            
+            elem15 = float(style in ["formal", "casual"])
+            logger.info(f"Element 15 (style_type): {elem15}")
+            
+            state_vector = [elem1, elem2, elem3, elem4, elem5, elem6, elem7, elem8, elem9, elem10, elem11, elem12, elem13, elem14, elem15]
+            
+            logger.info(f"State vector created successfully with {len(state_vector)} elements")
+            return state_vector
+            
+        except Exception as e:
+            logger.error(f"Error creating state vector: {e}")
+            raise
     
     def _calculate_writing_quality(self, original: str, transformed: str) -> float:
         """Calculate quality score for writing transformation"""
@@ -308,6 +370,11 @@ class AIReviewer(BaseAIAgent):
         try:
             review_response = await self._call_llm(prompt)
             
+            # Check if LLM call returned None or empty content
+            if not review_response:
+                logger.error("AI Reviewer received empty response from LLM")
+                raise ValueError("LLM returned empty response")
+            
             # Parse JSON response
             try:
                 review_data = json.loads(review_response)
@@ -321,7 +388,22 @@ class AIReviewer(BaseAIAgent):
                     raise ValueError("Could not parse review response as JSON")
             
             # Calculate quality metrics
-            overall_score = review_data.get("overall_score", 5) / 10.0  # Normalize to 0-1
+            raw_score = review_data.get("overall_score", 5)
+            logger.info(f"Raw overall score from LLM: {raw_score} (type: {type(raw_score)})")
+            
+            # Ensure score is a number and normalize to 0-1
+            if isinstance(raw_score, str):
+                try:
+                    raw_score = float(raw_score)
+                except ValueError:
+                    raw_score = 5.0
+            
+            overall_score = min(max(float(raw_score) / 10.0, 0.0), 1.0)  # Normalize to 0-1 and clamp
+            logger.info(f"Normalized overall score: {overall_score}")
+            
+            # Update the review data with the normalized score
+            review_data["overall_score"] = overall_score
+            
             criteria_scores = review_data.get("criteria_scores", {})
             
             # Update RL state
@@ -348,10 +430,10 @@ class AIReviewer(BaseAIAgent):
             float(len(content) > 100),  # Has substantial content
             float(overall_score > 0.5),  # Good quality
             float(len(criteria_scores) > 0),  # Has detailed criteria
-            min(len(criteria_scores.get("clarity", {}).get("score", 5)) / 10, 1.0),  # Clarity score
-            min(len(criteria_scores.get("grammar", {}).get("score", 5)) / 10, 1.0),  # Grammar score
-            min(len(criteria_scores.get("engagement", {}).get("score", 5)) / 10, 1.0),  # Engagement score
-            min(len(criteria_scores.get("structure", {}).get("score", 5)) / 10, 1.0),  # Structure score
+            min(float(criteria_scores.get("clarity", {}).get("score", 5)) / 10, 1.0),  # Clarity score
+            min(float(criteria_scores.get("grammar", {}).get("score", 5)) / 10, 1.0),  # Grammar score
+            min(float(criteria_scores.get("engagement", {}).get("score", 5)) / 10, 1.0),  # Engagement score
+            min(float(criteria_scores.get("structure", {}).get("score", 5)) / 10, 1.0),  # Structure score
             float(overall_score > 0.7),  # High quality
             float(overall_score < 0.3),  # Low quality
             time.time() % 1000  # Time component
@@ -414,6 +496,11 @@ class AIEditor(BaseAIAgent):
         
         try:
             edited_content = await self._call_llm(prompt)
+            
+            # Check if LLM call returned None or empty content
+            if not edited_content:
+                logger.error("AI Editor received empty response from LLM")
+                raise ValueError("LLM returned empty response")
             
             # Calculate improvement score
             improvement_score = self._calculate_improvement_score(content, edited_content, review_feedback)
@@ -539,7 +626,7 @@ class AgentOrchestrator:
             )
             
             # Calculate overall quality score
-            overall_quality = review_output.get("overall_score", 0.5)
+            overall_quality = review_output.get("overall_score", 0.5) if review_output else 0.5
             
             # Create processed content object
             processed_content = ProcessedContent(

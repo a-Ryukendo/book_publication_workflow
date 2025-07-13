@@ -14,9 +14,9 @@ from bs4 import BeautifulSoup
 import requests
 from loguru import logger
 
-from ..models import ScrapedContent, ScrapingRequest
-from ..config.settings import settings
-from ..rl.reward_system import ScrapingRewardSystem
+from models import ScrapedContent, ScrapingRequest
+from config.settings import settings
+from rl.reward_system import ScrapingRewardSystem
 
 
 class WebScraper:
@@ -244,11 +244,10 @@ class WebScraper:
             os.makedirs(settings.screenshots_dir, exist_ok=True)
             screenshot_path = os.path.join(settings.screenshots_dir, filename)
             
-            # Take screenshot
+            # Take screenshot (PNG doesn't support quality parameter)
             await page.screenshot(
                 path=screenshot_path,
-                full_page=True,
-                quality=settings.screenshot_quality
+                full_page=True
             )
             
             logger.info(f"Screenshot saved: {screenshot_path}")

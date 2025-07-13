@@ -3,7 +3,8 @@ Configuration settings for the Automated Book Publication Workflow
 """
 import os
 from typing import Optional, Dict, Any
-from pydantic import BaseSettings, Field
+from pydantic import Field
+from pydantic_settings import BaseSettings
 from enum import Enum
 
 
@@ -33,9 +34,9 @@ class Settings(BaseSettings):
     anthropic_api_key: Optional[str] = Field(default=None, env="ANTHROPIC_API_KEY")
     
     # Model Configuration
-    writer_model: str = Field(default="gpt-4", env="WRITER_MODEL")
-    reviewer_model: str = Field(default="gpt-4", env="REVIEWER_MODEL")
-    editor_model: str = Field(default="gpt-4", env="EDITOR_MODEL")
+    writer_model: str = Field(default="gpt-3.5-turbo", env="WRITER_MODEL")
+    reviewer_model: str = Field(default="gpt-3.5-turbo", env="REVIEWER_MODEL")
+    editor_model: str = Field(default="gpt-3.5-turbo", env="EDITOR_MODEL")
     
     # ChromaDB Configuration
     chroma_host: str = Field(default="localhost", env="CHROMA_HOST")
@@ -75,9 +76,11 @@ class Settings(BaseSettings):
     secret_key: str = Field(default="your-secret-key-here", env="SECRET_KEY")
     cors_origins: list = Field(default=["*"], env="CORS_ORIGINS")
     
-    class Config:
-        env_file = ".env"
-        case_sensitive = False
+    model_config = {
+        "env_file": ".env",
+        "case_sensitive": False,
+        "extra": "ignore"
+    }
     
     def get_llm_config(self) -> Dict[str, Any]:
         """Get LLM configuration based on provider"""
@@ -93,17 +96,17 @@ class Settings(BaseSettings):
             LLMProvider.GEMINI: {
                 "api_key": self.gemini_api_key,
                 "models": {
-                    "writer": "gemini-pro",
-                    "reviewer": "gemini-pro",
-                    "editor": "gemini-pro"
+                    "writer": "gemini-1.5-pro",
+                    "reviewer": "gemini-1.5-pro",
+                    "editor": "gemini-1.5-pro"
                 }
             },
             LLMProvider.ANTHROPIC: {
                 "api_key": self.anthropic_api_key,
                 "models": {
-                    "writer": "claude-3-sonnet-20240229",
-                    "reviewer": "claude-3-sonnet-20240229",
-                    "editor": "claude-3-sonnet-20240229"
+                    "writer": "claude-3-5-sonnet-20241022",
+                    "reviewer": "claude-3-5-sonnet-20241022",
+                    "editor": "claude-3-5-sonnet-20241022"
                 }
             }
         }

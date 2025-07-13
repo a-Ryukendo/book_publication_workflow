@@ -13,8 +13,8 @@ from chromadb.config import Settings
 from chromadb.utils import embedding_functions
 from loguru import logger
 
-from ..models import ScrapedContent, ProcessedContent, SearchQuery, VersionControl
-from ..config.settings import settings
+from models import ScrapedContent, ProcessedContent, SearchQuery, VersionControl
+from config.settings import settings
 
 
 class ChromaManager:

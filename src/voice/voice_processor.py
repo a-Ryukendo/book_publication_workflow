@@ -15,8 +15,8 @@ import pyttsx3
 import pyaudio
 from loguru import logger
 
-from ..models import VoiceInput, VoiceCommand, VoiceRequest
-from ..config.settings import settings
+from models import VoiceInput, VoiceCommand, VoiceRequest
+from config.settings import settings
 
 
 class VoiceProcessor:

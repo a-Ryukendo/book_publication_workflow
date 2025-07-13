@@ -6,8 +6,9 @@ import sys
 import os
 from pathlib import Path
 
-# Add the src directory to Python path
+# Add the src directory and parent directory to Python path
 sys.path.insert(0, str(Path(__file__).parent))
+sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from loguru import logger
 from config.settings import settings
@@ -125,6 +126,9 @@ async def run_cli_workflow(url: str, session_name: str = None):
     try:
         logger.info(f"Processing URL: {url}")
         
+        # Initialize the workflow first
+        await workflow.initialize()
+        
         result = await workflow.process_url(url, session_name)
         
         if result.success:
@@ -145,6 +149,9 @@ async def run_cli_workflow(url: str, session_name: str = None):
     except Exception as e:
         logger.error(f"CLI workflow error: {e}")
         print(f"❌ Error: {e}")
+    finally:
+        # Clean up resources
+        await workflow.cleanup()
 
 
 if __name__ == "__main__":

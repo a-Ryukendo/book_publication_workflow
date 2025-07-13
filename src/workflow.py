@@ -9,16 +9,16 @@ from uuid import UUID, uuid4
 
 from loguru import logger
 
-from .models import (
+from models import (
     ScrapedContent, ProcessedContent, Iteration, HumanFeedback,
     WorkflowSession, VersionControl, ScrapingRequest, ProcessingRequest,
     IterationRequest, SearchRequest, APIResponse
 )
-from .scraping.web_scraper import WebScraper
-from .agents.ai_agents import AgentOrchestrator
-from .database.chroma_manager import chroma_manager
-from .voice.voice_processor import VoiceProcessor, VoiceCommandProcessor
-from .config.settings import settings
+from scraping.web_scraper import WebScraper
+from agents.ai_agents import AgentOrchestrator
+from database.chroma_manager import chroma_manager
+from voice.voice_processor import VoiceProcessor, VoiceCommandProcessor
+from config.settings import settings
 
 
 class BookPublicationWorkflow:

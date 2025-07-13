@@ -13,7 +13,7 @@ from datetime import datetime
 from typing import List, Dict, Any, Optional, Tuple
 from loguru import logger
 
-from ..config.settings import settings
+from config.settings import settings
 
 
 class DQNNetwork(nn.Module):
@@ -292,12 +292,16 @@ class ContentProcessingRewardSystem:
     def calculate_processing_reward(self, original_content: str, processed_content: str,
                                   quality_score: float, iteration_count: int) -> float:
         """Calculate reward for content processing"""
+        # Check for None or empty content
+        if not original_content or not processed_content:
+            return 0.0
+            
         # Content improvement score
         original_length = len(original_content)
         processed_length = len(processed_content)
         
         # Length change penalty (shouldn't change too much)
-        length_change = abs(processed_length - original_length) / original_length
+        length_change = abs(processed_length - original_length) / max(original_length, 1)
         length_penalty = min(length_change * 0.5, 0.3)
         
         # Quality improvement bonus
